@@ -199,6 +199,27 @@ struct process *create_process(uint32_t pc) {
     return proc;
 }
 
+struct process *current_proc;
+struct process *idle_proc;
+
+void yield(void) {
+    struct process *next = idle_proc;
+    for (int i = 0; i < PROCS_MAX; i++) {
+        struct process *proc = &procs[(current_proc->pid + i) % PROCS_MAX];
+        if (proc->state == PROC_RUNNABLE && proc->pid > 0) {
+            next = proc;
+            break;
+        }
+    }
+
+    if (next == current_proc)
+        return;
+
+    struct process *prev = current_proc;
+    current_proc = next;
+    switch_context(&prev->sp, &next->sp);
+}
+
 void delay(void) {
     for (int i = 0; i < 30000000; i++)
         __asm__ __volatile__("nop");
@@ -211,8 +232,7 @@ void proc_a_entry(void) {
     printf("starting process A\n");
     while (1) {
         putchar('A');
-        switch_context(&proc_a->sp, &proc_b->sp);
-        delay();
+        yield();
     }
 }
 
@@ -220,21 +240,26 @@ void proc_b_entry(void) {
     printf("starting process B\n");
     while (1) {
         putchar('B');
-        switch_context(&proc_b->sp, &proc_a->sp);
-        delay();
+        yield();
     }
 }
 
 void kernel_main(void) {
     memset(__bss, 0, (size_t)__bss_end - (size_t)__bss);
 
-    WRITE_CSR(stvec, (uint32_t)kernel_entry);
+    printf("\n\n");
+
+    // WRITE_CSR(stvec, (uint32_t)kernel_entry);
+
+    idle_proc = create_process((uint32_t)NULL);
+    idle_proc->pid = 0;
+    current_proc = idle_proc;
 
     proc_a = create_process((uint32_t)proc_a_entry);
     proc_b = create_process((uint32_t)proc_b_entry);
-    proc_a_entry();
 
-    PANIC("unreachable here!");
+    yield();
+    PANIC("switched to idle process!");
 }
 
 __attribute__((section(".text.boot"))) __attribute__((naked)) void boot(void) {
