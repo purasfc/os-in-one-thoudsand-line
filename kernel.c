@@ -127,12 +127,12 @@ paddr_t alloc_pages(uint32_t n) {
 void kernel_main(void) {
     memset(__bss, 0, (size_t)__bss_end - (size_t)__bss);
 
-    WRITE_CSR(stvec, (uint32_t)kernel_entry);
-    __asm__ __volatile__("unimp");
+    paddr_t paddr0 = alloc_pages(2);
+    paddr_t paddr1 = alloc_pages(1);
+    printf("alloc_pages test: paddr0=%x\n", paddr0);
+    printf("alloc_pages test: paddr1=%x\n", paddr1);
 
-    for (;;) {
-        __asm__ __volatile__("wfi");
-    }
+    PANIC("booted!");
 }
 
 __attribute__((section(".text.boot"))) __attribute__((naked)) void boot(void) {
