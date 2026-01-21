@@ -71,4 +71,4 @@ struct process {
     int state;
     vaddr_t sp;
     uint8_t stack[8192];
-}}
+};
