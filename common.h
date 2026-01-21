@@ -10,7 +10,7 @@ typedef uint32_t vaddr_t;
 
 #define true 1
 #define false 0
-#define Null ((void *) 0)
+#define NULL ((void *) 0)
 // Builtin functions: https://clang.llvm.org/docs/LanguageExtensions.html
 #define align_up(value, align) __builtin_align_up(value, align)
 #define is_aligned(value, align) __builtin_is_aligned(value, align)

@@ -1,5 +1,6 @@
 #include "kernel.h"
 #include "common.h"
+#include <cstddef>
 
 extern char __bss[], __bss_end[], __stack_top[];
 
@@ -122,6 +123,81 @@ paddr_t alloc_pages(uint32_t n) {
 
     memset((void *)paddr, 0, n * PAGE_SIZE);
     return paddr;
+}
+
+__attribute__((naked)) void switch_context(uint32_t *prev_sp,
+                                           uint32_t *next_sp) {
+    __asm__ __volatile__(
+        "addi sp, sp, -13 * 4\n"
+        "sw ra, 4 * 0(sp)\n"
+        "sw s0, 4 * 1(sp)\n"
+        "sw s1, 4 * 2(sp)\n"
+        "sw s2, 4 * 3(sp)\n"
+        "sw s3, 4 * 4(sp)\n"
+        "sw s4, 4 * 5(sp)\n"
+        "sw s5, 4 * 6(sp)\n"
+        "sw s6, 4 * 7(sp)\n"
+        "sw s7, 4 * 8(sp)\n"
+        "sw s8, 4 * 9(sp)\n"
+        "sw s9, 4 * 10(sp)\n"
+        "sw s10, 4 * 11(sp)\n"
+        "sw s11, 4 * 12(sp)\n"
+        // sscratch register is used as a temporary storage to save the stack
+        // pointer at the time of exception occurrence, which is later restored.
+        "sw sp, (a0)\n"
+        "lw sp, (a1)\n"
+
+        "lw ra, 4 * 0(sp)\n"
+        "lw s0, 4 * 1(sp)\n"
+        "lw s1, 4 * 2(sp)\n"
+        "lw s2, 4 * 3(sp)\n"
+        "lw s3, 4 * 4(sp)\n"
+        "lw s4, 4 * 5(sp)\n"
+        "lw s5, 4 * 6(sp)\n"
+        "lw s6, 4 * 7(sp)\n"
+        "lw s7, 4 * 8(sp)\n"
+        "lw s8, 4 * 9(sp)\n"
+        "lw s9, 4 * 10(sp)\n"
+        "lw s10, 4 * 11(sp)\n"
+        "lw s11, 4 * 12(sp)\n"
+        "addi sp, sp, 13 * 4\n"
+        "ret\n");
+}
+
+struct process procs[PROCS_MAX];
+
+struct process *create_process(uint32_t pc) {
+    struct process *proc = NULL;
+    int i;
+    for (i = 0; i < PROCS_MAX; i++) {
+        if (procs[i].state == PROC_UNUSED) {
+            proc = &procs[i];
+            break;
+        }
+    }
+
+    if (!proc)
+        PANIC("no free process slots");
+
+    uint32_t *sp = (uint32_t *)&proc->stack[sizeof(proc->stack)];
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = (uint32_t)pc;
+
+    proc->pid = i + 1;
+    proc->state = PROC_RUNNABLE;
+    proc->sp = (uint32_t)sp;
+    return proc;
 }
 
 void kernel_main(void) {
