@@ -287,7 +287,7 @@ void kernel_main(void) {
 
     printf("\n\n");
 
-    // WRITE_CSR(stvec, (uint32_t)kernel_entry);
+    WRITE_CSR(stvec, (uint32_t)kernel_entry);
 
     idle_proc = create_process((uint32_t)NULL);
     idle_proc->pid = 0;
