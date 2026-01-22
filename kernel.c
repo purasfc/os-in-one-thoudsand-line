@@ -2,6 +2,12 @@
 #include "common.h"
 
 extern char __bss[], __bss_end[], __stack_top[];
+extern char __free_ram[], __free_ram_end[];
+extern char __kernel_base[];
+struct process procs[PROCS_MAX];
+extern char _binary_shell_bin_start[], _binary_shell_bin_size[];
+struct process *current_proc;
+struct process *idle_proc;
 
 struct sbiret sbi_call(long arg0, long arg1, long arg2, long arg3, long arg4,
                        long arg5, long fid, long eid) {
@@ -23,12 +29,94 @@ struct sbiret sbi_call(long arg0, long arg1, long arg2, long arg3, long arg4,
     return (struct sbiret){.error = a0, .value = a1};
 };
 
+__attribute__((naked)) void switch_context(uint32_t *prev_sp,
+                                           uint32_t *next_sp) {
+    __asm__ __volatile__(
+        "addi sp, sp, -13 * 4\n"
+        "sw ra, 4 * 0(sp)\n"
+        "sw s0, 4 * 1(sp)\n"
+        "sw s1, 4 * 2(sp)\n"
+        "sw s2, 4 * 3(sp)\n"
+        "sw s3, 4 * 4(sp)\n"
+        "sw s4, 4 * 5(sp)\n"
+        "sw s5, 4 * 6(sp)\n"
+        "sw s6, 4 * 7(sp)\n"
+        "sw s7, 4 * 8(sp)\n"
+        "sw s8, 4 * 9(sp)\n"
+        "sw s9, 4 * 10(sp)\n"
+        "sw s10, 4 * 11(sp)\n"
+        "sw s11, 4 * 12(sp)\n"
+        // sscratch register is used as a temporary storage to save the stack
+        // pointer at the time of exception occurrence, which is later restored.
+        "sw sp, (a0)\n"
+        "lw sp, (a1)\n"
+
+        "lw ra, 4 * 0(sp)\n"
+        "lw s0, 4 * 1(sp)\n"
+        "lw s1, 4 * 2(sp)\n"
+        "lw s2, 4 * 3(sp)\n"
+        "lw s3, 4 * 4(sp)\n"
+        "lw s4, 4 * 5(sp)\n"
+        "lw s5, 4 * 6(sp)\n"
+        "lw s6, 4 * 7(sp)\n"
+        "lw s7, 4 * 8(sp)\n"
+        "lw s8, 4 * 9(sp)\n"
+        "lw s9, 4 * 10(sp)\n"
+        "lw s10, 4 * 11(sp)\n"
+        "lw s11, 4 * 12(sp)\n"
+        "addi sp, sp, 13 * 4\n"
+        "ret\n");
+}
+
+void yield(void) {
+    struct process *next = idle_proc;
+    for (int i = 0; i < PROCS_MAX; i++) {
+        struct process *proc = &procs[(current_proc->pid + i) % PROCS_MAX];
+        if (proc->state == PROC_RUNNABLE && proc->pid > 0) {
+            next = proc;
+            break;
+        }
+    }
+
+    if (next == current_proc)
+        return;
+
+    __asm__ __volatile__(
+        "sfence.vma\n"
+        "csrw satp, %[satp]\n"
+        "sfence.vma\n"
+        "csrw sscratch, %[sscratch]\n"
+        :
+        : [satp] "r"(SATP_SV32 | ((uint32_t)next->page_table / PAGE_SIZE)),
+          [sscratch] "r"((uint32_t)&next->stack[sizeof(next->stack)]));
+
+    struct process *prev = current_proc;
+    current_proc = next;
+    switch_context(&prev->sp, &next->sp);
+}
+
 void putchar(char ch) { sbi_call(ch, 0, 0, 0, 0, 0, 0, 1); }
+
+long getchar(void) {
+    struct sbiret ret = sbi_call(0, 0, 0, 0, 0, 0, 0, 2);
+    return ret.error;
+}
 
 void handle_syscall(struct trap_frame *f) {
     switch (f->a3) {
     case SYS_PUTCHAR:
         putchar(f->a0);
+        break;
+    case SYS_GETCHAR:
+        while (1) {
+            long ch = getchar();
+            if (ch >= 0) {
+                f->a0 = ch;
+                break;
+            }
+
+            yield();
+        }
         break;
     default:
         PANIC("unexpected syscall a3=%x\n", f->a3);
@@ -129,8 +217,6 @@ __attribute__((naked)) __attribute__((aligned(4))) void kernel_entry(void) {
         "sret\n");
 }
 
-extern char __free_ram[], __free_ram_end[];
-
 paddr_t alloc_pages(uint32_t n) {
     static paddr_t next_paddr = (paddr_t)__free_ram;
     paddr_t paddr = next_paddr;
@@ -141,45 +227,6 @@ paddr_t alloc_pages(uint32_t n) {
 
     memset((void *)paddr, 0, n * PAGE_SIZE);
     return paddr;
-}
-
-__attribute__((naked)) void switch_context(uint32_t *prev_sp,
-                                           uint32_t *next_sp) {
-    __asm__ __volatile__(
-        "addi sp, sp, -13 * 4\n"
-        "sw ra, 4 * 0(sp)\n"
-        "sw s0, 4 * 1(sp)\n"
-        "sw s1, 4 * 2(sp)\n"
-        "sw s2, 4 * 3(sp)\n"
-        "sw s3, 4 * 4(sp)\n"
-        "sw s4, 4 * 5(sp)\n"
-        "sw s5, 4 * 6(sp)\n"
-        "sw s6, 4 * 7(sp)\n"
-        "sw s7, 4 * 8(sp)\n"
-        "sw s8, 4 * 9(sp)\n"
-        "sw s9, 4 * 10(sp)\n"
-        "sw s10, 4 * 11(sp)\n"
-        "sw s11, 4 * 12(sp)\n"
-        // sscratch register is used as a temporary storage to save the stack
-        // pointer at the time of exception occurrence, which is later restored.
-        "sw sp, (a0)\n"
-        "lw sp, (a1)\n"
-
-        "lw ra, 4 * 0(sp)\n"
-        "lw s0, 4 * 1(sp)\n"
-        "lw s1, 4 * 2(sp)\n"
-        "lw s2, 4 * 3(sp)\n"
-        "lw s3, 4 * 4(sp)\n"
-        "lw s4, 4 * 5(sp)\n"
-        "lw s5, 4 * 6(sp)\n"
-        "lw s6, 4 * 7(sp)\n"
-        "lw s7, 4 * 8(sp)\n"
-        "lw s8, 4 * 9(sp)\n"
-        "lw s9, 4 * 10(sp)\n"
-        "lw s10, 4 * 11(sp)\n"
-        "lw s11, 4 * 12(sp)\n"
-        "addi sp, sp, 13 * 4\n"
-        "ret\n");
 }
 
 void map_page(uint32_t *table1, uint32_t vaddr, paddr_t paddr, uint32_t flags) {
@@ -199,11 +246,6 @@ void map_page(uint32_t *table1, uint32_t vaddr, paddr_t paddr, uint32_t flags) {
     uint32_t *table0 = (uint32_t *)((table1[vpn1] >> 10) * PAGE_SIZE);
     table0[vpn0] = ((paddr / PAGE_SIZE) << 10) | flags | PAGE_V;
 }
-
-extern char __kernel_base[];
-
-struct process procs[PROCS_MAX];
-extern char _binary_shell_bin_start[], _binary_shell_bin_size[];
 
 __attribute__((naked)) void user_entry(void) {
     __asm__ __volatile__("csrw sepc, %[sepc]\n"
@@ -262,36 +304,6 @@ struct process *create_process(const void *image, size_t image_size) {
     proc->sp = (uint32_t)sp;
     proc->page_table = page_table;
     return proc;
-}
-
-struct process *current_proc;
-struct process *idle_proc;
-
-void yield(void) {
-    struct process *next = idle_proc;
-    for (int i = 0; i < PROCS_MAX; i++) {
-        struct process *proc = &procs[(current_proc->pid + i) % PROCS_MAX];
-        if (proc->state == PROC_RUNNABLE && proc->pid > 0) {
-            next = proc;
-            break;
-        }
-    }
-
-    if (next == current_proc)
-        return;
-
-    __asm__ __volatile__(
-        "sfence.vma\n"
-        "csrw satp, %[satp]\n"
-        "sfence.vma\n"
-        "csrw sscratch, %[sscratch]\n"
-        :
-        : [satp] "r"(SATP_SV32 | ((uint32_t)next->page_table / PAGE_SIZE)),
-          [sscratch] "r"((uint32_t)&next->stack[sizeof(next->stack)]));
-
-    struct process *prev = current_proc;
-    current_proc = next;
-    switch_context(&prev->sp, &next->sp);
 }
 
 void delay(void) {
