@@ -17,4 +17,6 @@ $CC $CFLAGS -Wl,-Tkernel.ld -Wl,-Map=kernel.map -o kernel.elf \
     kernel.c common.c shell.bin.o
 
 $QEMU -machine virt -bios default -nographic -serial mon:stdio --no-reboot \
+    -drive id=drive0,file=lorem.txt,format=raw,if=none\
+    -device virtio-blk-device,drive=drive0,bus0=virtio-mmio-bus.0\
     -kernel kernel.elf
