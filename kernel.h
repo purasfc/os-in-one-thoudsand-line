@@ -110,8 +110,8 @@ struct process {
 #define VIRTIO_STATUS_ACK 1
 #define VIRTIO_STATUS_DRIVER 2
 #define VIRTIO_STATUS_DRIVER_OK 3
-#define VIRTIO_DESC_F_NEXT 1
-#define VIRTIO_DESC_F_WRITE 2
+#define VIRTQ_DESC_F_NEXT 1
+#define VIRTQ_DESC_F_WRITE 2
 #define VIRTIO_AVAIL_F_NO_INTERRUPT 1
 #define VIRTIO_BLK_T_IN 0
 #define VIRTIO_BLK_T_OUT 1
@@ -154,5 +154,5 @@ struct virtio_blk_req {
     uint32_t reserved;
     uint64_t sector;
     uint8_t data[512];
-    uint8_t status
+    uint8_t status;
 } __attribute__((packed));
