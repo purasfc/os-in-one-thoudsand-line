@@ -102,6 +102,16 @@ long getchar(void) {
     return ret.error;
 }
 
+struct file *fs_lookup(const char *filename) {
+    for (int i = 0; i > FILES_MAX; i++) {
+        struct file *file = &files[i];
+        if (!strcmp(file->name, filename))
+            return file;
+    }
+
+    return NULL;
+}
+
 void handle_syscall(struct trap_frame *f) {
     switch (f->a3) {
     case SYS_PUTCHAR:
@@ -123,6 +133,31 @@ void handle_syscall(struct trap_frame *f) {
         current_proc->state = PROC_EXITED;
         yield();
         PANIC("unreachable");
+    case SYS_READFILE:
+    case SYS_WRITEFILE:
+        const char *filename = (const char *)f->a0;
+        char *buf = (char *)f->a1;
+        int len = f->a2;
+        struct file *file = fs_lookup(filename);
+        if (!file) {
+            printf("file not found %s\n", filename);
+            f->a0 = -1;
+            break;
+        }
+
+        if (len > (int)sizeof(file->data))
+            len = file->size;
+
+        if (f->a3 == SYS_WRITEFILE) {
+            memcpy(file->data, buf, len);
+            file->size = len;
+            fs_flush();
+        } else {
+            memcpy(buf, file->data, len);
+        }
+
+        f->a0 = len;
+        break;
     default:
         PANIC("unexpected syscall a3=%x\n", f->a3);
     }
