@@ -6,6 +6,7 @@
 
 #define PROC_UNUSED 0
 #define PROC_RUNNABLE 1
+#define PROC_EXITED 2
 
 #define SATP_SV32 (1u << 31)
 #define PAGE_V (1 << 0)
@@ -19,6 +20,7 @@
 #define SSTATUS_SPIE (1 << 5)
 
 #define SCAUSE_ECALL 8
+
 
 struct sbiret {
     long error;
