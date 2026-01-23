@@ -470,6 +470,47 @@ void fs_init(void) {
     }
 }
 
+void fs_flush(void) {
+    memset(disk, 0, sizeof(disk));
+    unsigned off = 0;
+    for (int file_i = 0; file_i < FILES_MAX; file_i++) {
+        struct file *file = &files[file_i];
+        if (!file->in_use)
+            continue;
+
+        struct tar_header *header = (struct tar_header *)&disk[off];
+        memset(header, 0, sizeof(*header));
+        strcpy(header->name, file->name);
+        strcpy(header->mode, "000644");
+        strcpy(header->magic, "ustar");
+        strcpy(header->version, "00");
+        header->type = '0';
+
+        int filesz = file->size;
+        for (int i = sizeof(header->size); i > 0; i--) {
+            header->size[i - 1] = (filesz % 8) + '0';
+            filesz /= 8;
+        }
+
+        int checksum = ' ' * sizeof(header->checksum);
+        for (unsigned i = 0; i < sizeof(struct tar_header); i++)
+            checksum += (unsigned char)disk[off + i];
+
+        for (int i = 5; i >= 0; i--) {
+            header->checksum[i] = (checksum % 8) + '0';
+            checksum /= 8;
+        }
+
+        memcpy(header->data, file->data, file->size);
+        off += align_up(sizeof(struct tar_header) + file->size, SECTOR_SIZE);
+    }
+
+    for (unsigned sector = 0; sector < sizeof(disk) / SECTOR_SIZE; sector++)
+        read_write_disk(&disk[sector * SECTOR_SIZE], sector, true);
+
+    printf("wrote %b bytes to disk\n", sizeof(disk));
+}
+
 void delay(void) {
     for (int i = 0; i < 30000000; i++)
         __asm__ __volatile__("nop");
